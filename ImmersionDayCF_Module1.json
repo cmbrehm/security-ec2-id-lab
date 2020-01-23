@@ -1,0 +1,458 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+
+  "Description": "Security and Compliance Immersion Day - CloudFormation Template for Module 1 (without SSM Endpoint - manual creation needed)",
+  "Mappings" : {
+    "RegionMap" : {
+      "us-east-1" : { "AMI" : "ami-0aa3c8ac7278c6d3e"},
+      "eu-central-1" : { "AMI" : "ami-0994313865b869a92"}
+    }
+  },
+  "Parameters" : {
+    "VPCname" : {
+      "Type" : "String",
+      "Description" : "Name for Security&Compliance Immersion Day VPC"
+    },
+    "EC2KeyPair" : {
+      "Type" : "AWS::EC2::KeyPair::KeyName",
+      "Description" : "Amazon EC2 Key Pair"
+    }
+  },
+  "Resources": {
+    "vpc": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "10.1.0.0/16",
+        "InstanceTenancy": "default",
+        "EnableDnsSupport": "true",
+        "EnableDnsHostnames": "true",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": { "Ref" : "VPCname" }
+          }
+        ]
+      }
+    },
+    "privatesubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.1.2.0/24",
+        "AvailabilityZone": { "Fn::Select" : [ "1", { "Fn::GetAZs" : { "Ref" : "AWS::Region" } } ] },
+        "VpcId": {
+          "Ref": "vpc"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "PrivateSubnet_2"
+          }
+        ]
+      }
+    },
+    "publicsubnet1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.1.0.0/24",
+        "AvailabilityZone": { "Fn::Select" : [ "0", { "Fn::GetAZs" : { "Ref" : "AWS::Region" } } ] },
+        "VpcId": {
+          "Ref": "vpc"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "PublicSubnet_1"
+          }
+        ]
+      }
+    },
+    "publicsubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.1.3.0/24",
+        "AvailabilityZone": { "Fn::Select" : [ "1", { "Fn::GetAZs" : { "Ref" : "AWS::Region" } } ] },
+        "VpcId": {
+          "Ref": "vpc"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "PublicSubnet_2"
+          }
+        ]
+      }
+    },
+    "privatesubnet1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.1.1.0/24",
+        "AvailabilityZone": { "Fn::Select" : [ "0", { "Fn::GetAZs" : { "Ref" : "AWS::Region" } } ] },
+        "VpcId": {
+          "Ref": "vpc"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "PrivateSubnet_1"
+          }
+        ]
+      }
+    },
+    "igw": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": { "Fn::Join" : [ "", [ { "Ref" : "VPCname" }, "_IntGateway" ] ] }
+          }
+        ]
+      }
+    },
+    "ngw": {
+      "Type" : "AWS::EC2::NatGateway",
+      "Properties" : {
+        "AllocationId" : { "Fn::GetAtt" : ["eip", "AllocationId"]},
+        "SubnetId" : { "Ref" : "publicsubnet1"}
+      }
+    },
+    "eip": {
+      "Type": "AWS::EC2::EIP",
+      "Properties": {
+        "Domain": "vpc"
+      }
+    },
+    "privaterouter": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "vpc"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "PrivatRoutes"
+          }
+        ]
+      }
+    },
+    "publicrouter": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "vpc"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "PublicRoutes"
+          }
+        ]
+      }
+    },
+    "ImmersionDayEC2Role": {
+       "Type": "AWS::IAM::Role",
+       "Properties": {
+          "AssumeRolePolicyDocument": {
+               "Statement": [{
+                  "Effect": "Allow",
+                  "Principal": {
+                     "Service": ["ec2.amazonaws.com"]
+                  },
+                  "Action": ["sts:AssumeRole"]
+               }]
+            },
+          "Path": "/",
+          "Policies": [
+            {
+              "PolicyName" : "AmazonDynamoDBFullAccess",
+              "PolicyDocument" : {
+                "Statement" : [
+                  {
+                    "Effect" : "Allow",
+                    "Action" : "*",
+                    "Resource" : "*"
+                  }
+                ]
+              }
+            },
+            {
+              "PolicyName" : "AmazonSSMReadOnlyAccess",
+              "PolicyDocument" : {
+                "Statement" : [
+                  {
+                    "Effect" : "Allow",
+                    "Action" : "*",
+                    "Resource" : "*"
+                  }
+                ]
+              }
+            }
+          ],
+          "RoleName": { "Fn::Join" : [ "", [ { "Ref" : "VPCname" }, "_EC2Role" ] ] }
+       }
+    },
+    "ImmersionDayEC2InstanceProfile": {
+       "Type": "AWS::IAM::InstanceProfile",
+       "Properties": {
+          "Path": "/",
+          "Roles": [{ "Ref": "ImmersionDayEC2Role" }]
+       }
+    },
+    "instance1": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "DisableApiTermination": "false",
+        "InstanceInitiatedShutdownBehavior": "stop",
+        "IamInstanceProfile": { "Ref" : "ImmersionDayEC2InstanceProfile" },
+        "ImageId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ]},
+        "InstanceType": "t2.micro",
+        "KeyName": { "Ref" : "EC2KeyPair"},
+        "Monitoring": "false",
+        "Tags": [
+          {
+            "Key": "instance",
+            "Value": "immersionday"
+          }
+        ],
+        "NetworkInterfaces": [
+          {
+            "DeleteOnTermination": "true",
+            "Description": "Primary network interface",
+            "DeviceIndex": 0,
+            "SubnetId": {
+              "Ref": "privatesubnet1"
+            },
+            "GroupSet": [
+              {
+                "Ref": "sgImmersionDaySecGroup"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "instance2": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "DisableApiTermination": "false",
+        "InstanceInitiatedShutdownBehavior": "stop",
+        "IamInstanceProfile": { "Ref" : "ImmersionDayEC2InstanceProfile" },
+        "ImageId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ]},
+        "InstanceType": "t2.micro",
+        "KeyName": { "Ref" : "EC2KeyPair" },
+        "Monitoring": "false",
+        "Tags": [
+          {
+            "Key": "instance",
+            "Value": "immersionday"
+          }
+        ],
+        "NetworkInterfaces": [
+          {
+            "DeleteOnTermination": "true",
+            "Description": "Primary network interface",
+            "DeviceIndex": 0,
+            "SubnetId": {
+              "Ref": "privatesubnet2"
+            },
+            "GroupSet": [
+              {
+                "Ref": "sgImmersionDaySecGroup"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "sgImmersionDaySecGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Sec Group used for all instances",
+        "VpcId": {
+          "Ref": "vpc"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "ImmersionDaySecGroup"
+          }
+        ]
+      }
+    },
+    "igwAttach": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "VpcId": {
+          "Ref": "vpc"
+        },
+        "InternetGatewayId": {
+          "Ref": "igw"
+        }
+      }
+    },
+    "subnetroute1": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "privaterouter"
+        },
+        "SubnetId": {
+          "Ref": "privatesubnet1"
+        }
+      }
+    },
+    "subnetroute2": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "privaterouter"
+        },
+        "SubnetId": {
+          "Ref": "privatesubnet2"
+        }
+      }
+    },
+    "subnetroute4": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "publicrouter"
+        },
+        "SubnetId": {
+          "Ref": "publicsubnet1"
+        }
+      }
+    },
+    "subnetroute5": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "publicrouter"
+        },
+        "SubnetId": {
+          "Ref": "publicsubnet2"
+        }
+      }
+    },
+    "route1": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "RouteTableId": {
+          "Ref": "publicrouter"
+        },
+        "GatewayId": {
+          "Ref": "igw"
+        }
+      },
+      "DependsOn": "igwAttach"
+    },
+    "route2": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "RouteTableId": {
+          "Ref": "privaterouter"
+        },
+        "NatGatewayId": {
+          "Ref": "ngw"
+        }
+      }
+    },
+    "ingress1": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "sgImmersionDaySecGroup"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": "80",
+        "ToPort": "80",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "ingress2": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "sgImmersionDaySecGroup"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": "8080",
+        "ToPort": "8080",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "ingress3": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "sgImmersionDaySecGroup"
+        },
+        "IpProtocol": "-1",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "ingress4": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "sgImmersionDaySecGroup"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": "22",
+        "ToPort": "22",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "egress1": {
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "sgImmersionDaySecGroup"
+        },
+        "IpProtocol": "-1",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "loadbalancer" : {
+      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "Properties": {
+        "Scheme" : "internet-facing",
+        "Subnets" : [ {"Ref": "publicsubnet1"}, {"Ref" : "publicsubnet2"} ],
+        "SecurityGroups" : [{"Ref": "sgImmersionDaySecGroup"}],
+        "Type" : "application"
+      }
+    },
+    "targetgroup" : {
+      "Type" : "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties" : {
+        "HealthCheckProtocol": "HTTP",
+        "HealthCheckPath" : "/tweetstats/home",
+        "HealthCheckIntervalSeconds" : 5,
+        "HealthCheckTimeoutSeconds" : 2,
+        "HealthyThresholdCount" : 2,
+        "Port": 8080,
+        "Protocol": "HTTP",
+        "Targets": [
+          { "Id": {"Ref" : "instance1"}, "Port": 8080 },
+          { "Id": {"Ref" : "instance2"}, "Port": 8080 }
+        ],
+        "VpcId": {"Ref" : "vpc"}
+      }
+    },
+    "ALBListener" : {
+      "Type" : "AWS::ElasticLoadBalancingV2::Listener",
+      "Properties" : {
+        "DefaultActions" : [{
+          "Type" : "forward",
+          "TargetGroupArn" : { "Ref" : "targetgroup" }
+        }],
+        "LoadBalancerArn" : { "Ref" : "loadbalancer" },
+        "Port" : 80,
+        "Protocol" : "HTTP"
+      }
+    }
+  }
+}
